@@ -8,7 +8,7 @@ from langchain_chroma import Chroma
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_classic.retrievers import ParentDocumentRetriever
-from langchain.storage import InMemoryStore
+from langchain_core.stores import InMemoryStore
 
 st.set_page_config(page_title="RAG Crashcourse", page_icon="⚖️", layout="wide")
 st.title("Asistente para la Ley de Cultura Cívica de la CDMX")
