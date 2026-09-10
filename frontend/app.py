@@ -7,7 +7,7 @@ from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from langchain_chroma import Chroma
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.retrievers import ParentDocumentRetriever
+from langchain_classic.retrievers import ParentDocumentRetriever
 from langchain.storage import InMemoryStore
 
 st.set_page_config(page_title="RAG Crashcourse", page_icon="⚖️", layout="wide")
