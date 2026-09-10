@@ -43,7 +43,7 @@ if os.path.exists("padres_data.json"):
         datos_padres = json.load(f)
         store.store = {k: Document(**v) for k, v in datos_padres.items()}
 
-# Configurar el Recuperador (Los splitters deben existir para que LangChain no dé error, aunque ya no procesen)
+# Configurar el Recuperador
 parent_splitter = RecursiveCharacterTextSplitter(chunk_size=5000, chunk_overlap=200)
 child_splitter = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=50)
 
@@ -63,12 +63,6 @@ async def query_rag(request: QueryRequest):
     pregunta_formateada = f"query: {request.pregunta}"
     documentos_recuperados = retriever.invoke(pregunta_formateada)
     
-    # Depuración
-    print("\n" + "="*50)
-    print(f"PREGUNTA ORIGINAL: {request.pregunta}")
-    print(f"DOCUMENTOS PADRE RECUPERADOS: {len(documentos_recuperados)}")
-    print("="*50 + "\n")
-    
     contexto_str = "\n\n".join([doc.page_content for doc in documentos_recuperados])
     
     prompt = ChatPromptTemplate.from_messages([
@@ -81,7 +75,7 @@ async def query_rag(request: QueryRequest):
         REGLA ESTRICTA: Dentro de tu respuesta, DEBES mencionar explícitamente el o los "Artículos" o "Capítulos" de la normativa en los que te estás basando.
         REGLA ESTRICTA: No se deberán convertir los números decimales a romanos si no son subpárrafos de un artículo o expresen cantidades y tiempo.
         
-        Si la respuesta definitivamente no se encuentra en el contexto, responde textualmente: 'No pude encontrar información sobre tu consulta.'
+        Si la respuesta definitivamente no se encuentra en el contexto, responde textualmente: 'No pude encontrar esa información en la versión actual del documento (15/06/2022).'
         
         Contexto legal:
         {contexto}"""),

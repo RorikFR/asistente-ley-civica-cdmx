@@ -15,25 +15,24 @@ st.title("Asistente para la Ley de Cultura Cívica de la CDMX")
 st.subheader("Aquí puedes aclarar todas tus dudas sobre cualquier artículo.")
 st.divider()
 
-# 1. Inicialización en Caché del Backend (Solo se ejecuta al arrancar el servidor)
 @st.cache_resource
 def iniciar_sistema_rag():
-    # Variables secretas de Streamlit Cloud
+    #Streamlit Secrets
     hf_token = st.secrets["HF_TOKEN"]
     groq_key = st.secrets["GROQ_API_KEY"]
-
+    #HuggingFace inference model
     embeddings = HuggingFaceEndpointEmbeddings(
         model="intfloat/multilingual-e5-large",
         task="feature-extraction",
         huggingfacehub_api_token=hf_token
     )
-
+    #Groq model
     llm = ChatGroq(
         api_key=groq_key,
         model="openai/gpt-oss-120b", 
         temperature=0.0
     )
-
+    #Vector database
     vector_store = Chroma(
         collection_name="leyes_hijos",
         embedding_function=embeddings,
@@ -61,7 +60,7 @@ def iniciar_sistema_rag():
         ("system", """Eres un asistente legal experto en la Ley de Cultura Cívica de la CDMX.
         Tu tarea es responder a la pregunta basándote ÚNICAMENTE en el siguiente contexto.
         DEBES mencionar explícitamente el o los "Artículos" o "Fracciones" de la normativa en los que te basas.
-        Si la respuesta no está en el contexto, responde: 'No encuentro esa información en la Ley.'
+        Si la respuesta no está en el contexto, responde: 'No pude encontrar esa información en la versión actual del documento (15/06/2022).'
         Contexto legal:\n{contexto}"""),
         ("human", "{pregunta}")
     ])
@@ -70,10 +69,10 @@ def iniciar_sistema_rag():
     return retriever, chain
 
 # Cargar el motor
-with st.spinner("Inicializando base de datos legal..."):
+with st.spinner("Inicializando base de datos..."):
     retriever, chain = iniciar_sistema_rag()
 
-# 2. Lógica del Chat
+# Logica del chat
 if "mensajes" not in st.session_state:
     st.session_state.mensajes = []
 
@@ -87,7 +86,7 @@ for msg in st.session_state.mensajes:
                     st.caption(f"**Fuente {i+1}:** {fuente['extracto']}")
 
 # Entrada de usuario
-pregunta = st.chat_input("Ejemplo: ¿Me pueden sancionar por hacer ruido?")
+pregunta = st.chat_input("Ejemplo: ¿Para qué sirve la Ley Cívica de la CDMX?")
 
 if pregunta:
     st.session_state.mensajes.append({"rol": "user", "contenido": pregunta})
@@ -95,9 +94,8 @@ if pregunta:
         st.markdown(pregunta)
 
     with st.chat_message("assistant"):
-        with st.spinner("Consultando artículos y generando una respuesta..."):
+        with st.spinner("Consultando artículos, por favor espera..."):
             
-            # --- RAG LOCAL EN LUGAR DE REQUESTS HTTP ---
             pregunta_formateada = f"query: {pregunta}"
             docs = retriever.invoke(pregunta_formateada)
             contexto_str = "\n\n".join([doc.page_content for doc in docs])
@@ -105,13 +103,12 @@ if pregunta:
             respuesta = chain.invoke({"contexto": contexto_str, "pregunta": pregunta})
             respuesta_texto = respuesta.content
             
-            # Construir el diccionario de fuentes tal cual lo lee tu frontend
             fuentes = [{"extracto": doc.page_content[:300] + "..."} for doc in docs]
             # -------------------------------------------
             
             st.markdown(respuesta_texto)
             
-            with st.expander("Ver artículos de referencia"):
+            with st.expander("Fuentes"):
                 for i, fuente in enumerate(fuentes):
                     st.caption(f"**Fuente {i+1}:** {fuente['extracto']}")
             
