@@ -1,0 +1,122 @@
+import os
+import json
+import streamlit as st
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
+from langchain_chroma import Chroma
+from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.retrievers import ParentDocumentRetriever
+from langchain.storage import InMemoryStore
+
+st.set_page_config(page_title="RAG Crashcourse", page_icon="⚖️", layout="wide")
+st.title("Asistente para la Ley de Cultura Cívica de la CDMX")
+st.subheader("Aquí puedes aclarar todas tus dudas sobre cualquier artículo.")
+st.divider()
+
+# 1. Inicialización en Caché del Backend (Solo se ejecuta al arrancar el servidor)
+@st.cache_resource
+def iniciar_sistema_rag():
+    # Variables secretas de Streamlit Cloud
+    hf_token = st.secrets["HF_TOKEN"]
+    groq_key = st.secrets["GROQ_API_KEY"]
+
+    embeddings = HuggingFaceEndpointEmbeddings(
+        model="intfloat/multilingual-e5-large",
+        task="feature-extraction",
+        huggingfacehub_api_token=hf_token
+    )
+
+    llm = ChatGroq(
+        api_key=groq_key,
+        model="openai/gpt-oss-120b", 
+        temperature=0.0
+    )
+
+    vector_store = Chroma(
+        collection_name="leyes_hijos",
+        embedding_function=embeddings,
+        persist_directory="./chroma_data"
+    )
+
+    store = InMemoryStore()
+    if os.path.exists("padres_data.json"):
+        with open("padres_data.json", "r", encoding="utf-8") as f:
+            datos_padres = json.load(f)
+            store.store = {k: Document(**v) for k, v in datos_padres.items()}
+
+    parent_splitter = RecursiveCharacterTextSplitter(chunk_size=5000, chunk_overlap=200)
+    child_splitter = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=50)
+
+    retriever = ParentDocumentRetriever(
+        vectorstore=vector_store,
+        docstore=store,
+        child_splitter=child_splitter,
+        parent_splitter=parent_splitter,
+        search_kwargs={"k": 4}
+    )
+    
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """Eres un asistente legal experto en la Ley de Cultura Cívica de la CDMX.
+        Tu tarea es responder a la pregunta basándote ÚNICAMENTE en el siguiente contexto.
+        DEBES mencionar explícitamente el o los "Artículos" o "Fracciones" de la normativa en los que te basas.
+        Si la respuesta no está en el contexto, responde: 'No encuentro esa información en la Ley.'
+        Contexto legal:\n{contexto}"""),
+        ("human", "{pregunta}")
+    ])
+    
+    chain = prompt | llm
+    return retriever, chain
+
+# Cargar el motor
+with st.spinner("Inicializando base de datos legal..."):
+    retriever, chain = iniciar_sistema_rag()
+
+# 2. Lógica del Chat
+if "mensajes" not in st.session_state:
+    st.session_state.mensajes = []
+
+# Renderizar mensajes anteriores
+for msg in st.session_state.mensajes:
+    with st.chat_message(msg["rol"]):
+        st.markdown(msg["contenido"])
+        if "fuentes" in msg:
+            with st.expander("Ver artículos de referencia"):
+                for i, fuente in enumerate(msg["fuentes"]):
+                    st.caption(f"**Fuente {i+1}:** {fuente['extracto']}")
+
+# Entrada de usuario
+pregunta = st.chat_input("Ejemplo: ¿Me pueden sancionar por hacer ruido?")
+
+if pregunta:
+    st.session_state.mensajes.append({"rol": "user", "contenido": pregunta})
+    with st.chat_message("user"):
+        st.markdown(pregunta)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Consultando artículos y generando una respuesta..."):
+            
+            # --- RAG LOCAL EN LUGAR DE REQUESTS HTTP ---
+            pregunta_formateada = f"query: {pregunta}"
+            docs = retriever.invoke(pregunta_formateada)
+            contexto_str = "\n\n".join([doc.page_content for doc in docs])
+            
+            respuesta = chain.invoke({"contexto": contexto_str, "pregunta": pregunta})
+            respuesta_texto = respuesta.content
+            
+            # Construir el diccionario de fuentes tal cual lo lee tu frontend
+            fuentes = [{"extracto": doc.page_content[:300] + "..."} for doc in docs]
+            # -------------------------------------------
+            
+            st.markdown(respuesta_texto)
+            
+            with st.expander("Ver artículos de referencia"):
+                for i, fuente in enumerate(fuentes):
+                    st.caption(f"**Fuente {i+1}:** {fuente['extracto']}")
+            
+            st.session_state.mensajes.append({
+                "rol": "assistant", 
+                "contenido": respuesta_texto,
+                "fuentes": fuentes
+            })
